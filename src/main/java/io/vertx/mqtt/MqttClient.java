@@ -25,6 +25,7 @@ import io.vertx.core.Vertx;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.mqtt.impl.MqttClientImpl;
 import io.vertx.mqtt.messages.MqttConnAckMessage;
+import io.vertx.mqtt.messages.MqttMessage;
 import io.vertx.mqtt.messages.MqttPublishMessage;
 import io.vertx.mqtt.messages.MqttSubAckMessage;
 
@@ -141,6 +142,51 @@ public interface MqttClient {
    */
   @Fluent
   MqttClient publishHandler(Handler<MqttPublishMessage> publishHandler);
+
+  /**
+   * Sets handler which will be called each time server publish something to client
+   * QoS1 and QoS2 hanshake is handled by the user
+   * When publishHandler is set then it takes precedence
+   *
+   * @param publishHandlerManualHandshake handler to call
+   * @return current MQTT client instance
+   */
+  @Fluent
+  MqttClient publishHandlerManualHandshake(Handler<MqttPublishMessage> publishHandlerManualHandshake);
+
+  /**
+   * Sets handler which will be called each time server sends PUBREL message
+   * the message ID is provided to the handler
+   *
+   * @param pubrelHandler handler to call
+   * @return current MQTT client instance
+   */
+  @Fluent
+  MqttClient pubrelHandler(Handler<MqttMessage> pubrelHandler);
+
+  /**
+   * Sends PUBACK packet to server
+   *
+   * @param publishMessageId identifier of the PUBLISH message to acknowledge
+   */
+  @Fluent
+  MqttClient publishAcknowledge(int publishMessageId);
+
+  /**
+   * Sends PUBREC packet to server
+   *
+   * @param publishMessage identifier of the PUBLISH message to acknowledge
+   */
+  @Fluent
+  MqttClient publishReceived(MqttPublishMessage publishMessage);
+
+  /**
+   * Sends PUBCOMP packet to server
+   *
+   * @param publishMessageId identifier of the PUBLISH message to acknowledge
+   */
+  @Fluent
+  MqttClient publishComplete(int publishMessageId);
 
   /**
    * Sets handler which will be called after SUBACK packet receiving
