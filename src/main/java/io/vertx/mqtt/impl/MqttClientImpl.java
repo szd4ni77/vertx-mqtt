@@ -95,6 +95,10 @@ public class MqttClientImpl implements MqttClient {
   Handler<Integer> unsubscribeCompletionHandler;
   // handler to call when a publish message comes in
   Handler<MqttPublishMessage> publishHandler;
+  // handler to call when a publish message comes in; user handles handshake
+  Handler<MqttPublishMessage> publishHandlerManualHandshake;
+  // handler to call when a pubrel message comes in and the user handles th handshake
+  Handler<MqttMessage> pubrelHandler;
   // handler to call when a subscribe request is completed
   Handler<MqttSubAckMessage> subscribeCompletionHandler;
   // handler to call when a connection request is completed
@@ -351,6 +355,38 @@ public class MqttClientImpl implements MqttClient {
     return this;
   }
 
+  private synchronized Handler<MqttPublishMessage> publishHandler() {
+    return this.publishHandler;
+  }
+
+  /**
+   * See {@link MqttClient#publishHandlerManualHandshake(Handler)} for more details
+   */
+  @Override
+  public MqttClient publishHandlerManualHandshake(Handler<MqttPublishMessage> publishHandlerManualHandshake) {
+
+    this.publishHandlerManualHandshake = publishHandlerManualHandshake;
+    return this;
+  }
+
+  private synchronized Handler<MqttPublishMessage> publishHandlerManualHandshake() {
+    return this.publishHandlerManualHandshake;
+  }
+
+  /**
+   * See {@link MqttClient#pubrelHandler(Handler)} for more details
+   */
+  @Override
+  public MqttClient pubrelHandler(Handler<MqttMessage> pubrelHandler) {
+
+    this.pubrelHandler = pubrelHandler;
+    return this;
+  }
+
+  private synchronized Handler<MqttMessage> pubrelHandler() {
+    return this.pubrelHandler;
+  }
+
   /**
    * See {@link MqttClient#subscribeCompletionHandler(Handler)} for more details
    */
@@ -490,7 +526,7 @@ public class MqttClientImpl implements MqttClient {
    * See {@link MqttClient#exceptionHandler(Handler)} for more details
    */
   @Override
-  public MqttClient exceptionHandler(Handler<Throwable> handler) {
+  public synchronized MqttClient exceptionHandler(Handler<Throwable> handler) {
     exceptionHandler = handler;
     return this;
   }
@@ -531,11 +567,10 @@ public class MqttClientImpl implements MqttClient {
   }
 
   /**
-   * Sends PUBACK packet to server
-   *
-   * @param publishMessageId identifier of the PUBLISH message to acknowledge
+   * See {@link MqttClient#publishAcknowledge(int)} for more details
    */
-  void publishAcknowledge(int publishMessageId) {
+  @Override
+  public MqttClient publishAcknowledge(int publishMessageId) {
 
     MqttFixedHeader fixedHeader =
       new MqttFixedHeader(MqttMessageType.PUBACK, false, AT_MOST_ONCE, false, 0);
@@ -546,14 +581,15 @@ public class MqttClientImpl implements MqttClient {
     io.netty.handler.codec.mqtt.MqttMessage puback = MqttMessageFactory.newMessage(fixedHeader, variableHeader, null);
 
     this.write(puback);
+
+    return this;
   }
 
   /**
-   * Sends PUBREC packet to server
-   *
-   * @param publishMessage a PUBLISH message to acknowledge
+   * See {@link MqttClient#publishReceived(MqttPublishMessage)} for more details
    */
-  void publishReceived(MqttPublishMessage publishMessage) {
+  @Override
+  public MqttClient publishReceived(MqttPublishMessage publishMessage) {
 
     MqttFixedHeader fixedHeader =
       new MqttFixedHeader(MqttMessageType.PUBREC, false, AT_MOST_ONCE, false, 0);
@@ -565,14 +601,15 @@ public class MqttClientImpl implements MqttClient {
 
     qos2inbound.put(publishMessage.messageId(), publishMessage);
     this.write(pubrec);
+
+    return this;
   }
 
   /**
-   * Sends PUBCOMP packet to server
-   *
-   * @param publishMessageId identifier of the PUBLISH message to acknowledge
+   * See {@link MqttClient#publishAcknowledge(int)} for more details
    */
-  void publishComplete(int publishMessageId) {
+  @Override
+  public MqttClient publishComplete(int publishMessageId) {
 
     MqttFixedHeader fixedHeader =
       new MqttFixedHeader(MqttMessageType.PUBCOMP, false, AT_MOST_ONCE, false, 0);
@@ -583,6 +620,8 @@ public class MqttClientImpl implements MqttClient {
     io.netty.handler.codec.mqtt.MqttMessage pubcomp = MqttMessageFactory.newMessage(fixedHeader, variableHeader, null);
 
     this.write(pubcomp);
+
+    return this;
   }
 
   /**
@@ -768,10 +807,17 @@ public class MqttClientImpl implements MqttClient {
 
   /**
    * Used for calling the publish handler when the server publishes a message
+   * If a handler with manual handshake is present then control is given to user.
    *
    * @param msg published message
    */
   void handlePublish(MqttPublishMessage msg) {
+
+    Handler<MqttPublishMessage> handlerManualHandshake = this.publishHandlerManualHandshake();
+    if (handlerManualHandshake != null) {
+      handlerManualHandshake.handle(msg);
+      return;
+    }
 
     synchronized (this.connection.so) {
 
@@ -801,6 +847,7 @@ public class MqttClientImpl implements MqttClient {
 
   /**
    * Used for calling the pubrel handler when the server acknowledge a QoS 2 message with pubrel
+   * If a handler with manual handshake is present then control is given to user.
    *
    * @param pubrelMessageId identifier of the message acknowledged by the server
    */
@@ -811,6 +858,12 @@ public class MqttClientImpl implements MqttClient {
 
       if (message == null) {
         log.warn("Received PUBREL packet without having related PUBREC packet in storage");
+        return;
+      }
+
+      Handler<MqttMessage> pubrelHandler = this.pubrelHandler();
+      if (pubrelHandler != null) {
+        pubrelHandler.handle(message);
         return;
       }
 
